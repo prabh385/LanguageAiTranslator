@@ -1,0 +1,209 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="card shadow mb-4">
+    <div class="card-header bg-primary-subtle">
+        <h2 class="card-title mb-0">AI-Powered Translation System</h2>
+    </div>
+    <div class="card-body">
+        <p class="lead">Translate text, audio, and video from English to Indian regional languages with state-of-the-art AI technology.</p>
+        
+        <!-- Language Selector -->
+        <div class="mb-4">
+            <label for="language-selector" class="form-label">Target Language</label>
+            <select id="language-selector" class="form-select">
+                {% for code, name in languages.items() %}
+                <option value="{{ code }}">{{ name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <!-- Navigation Tabs -->
+        <ul class="nav nav-tabs mb-4" id="translationTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="text-tab" data-bs-toggle="tab" data-bs-target="#text-translation" type="button" role="tab" aria-controls="text-translation" aria-selected="true">
+                    <i class="fas fa-font me-2"></i>Text
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="audio-tab" data-bs-toggle="tab" data-bs-target="#audio-translation" type="button" role="tab" aria-controls="audio-translation" aria-selected="false">
+                    <i class="fas fa-microphone me-2"></i>Audio
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="video-tab" data-bs-toggle="tab" data-bs-target="#video-translation" type="button" role="tab" aria-controls="video-translation" aria-selected="false">
+                    <i class="fas fa-video me-2"></i>Video
+                </button>
+            </li>
+        </ul>
+        
+        <!-- Tab Content -->
+        <div class="tab-content" id="translationTabsContent">
+            <!-- Text Translation Tab -->
+            <div class="tab-pane fade show active" id="text-translation" role="tabpanel" aria-labelledby="text-tab">
+                <div class="row g-4">
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header bg-primary-subtle">
+                                <h3 class="card-title h5 mb-0">English Text</h3>
+                            </div>
+                            <div class="card-body">
+                                <textarea id="source-text" class="form-control mb-3" rows="6" placeholder="Enter English text to translate..."></textarea>
+                                <div class="d-flex justify-content-end">
+                                    <button id="clear-text-btn" class="btn btn-outline-secondary me-2">
+                                        <i class="fas fa-eraser me-1"></i>Clear
+                                    </button>
+                                    <button id="translate-text-btn" class="btn btn-primary">
+                                        <i class="fas fa-language me-1"></i>Translate
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header bg-primary-subtle">
+                                <h3 class="card-title h5 mb-0"><span id="target-language-label">Hindi</span> Translation</h3>
+                            </div>
+                            <div class="card-body">
+                                <div id="translation-status" class="mb-2">
+                                    <span class="text-muted">Translation will appear here</span>
+                                </div>
+                                <div id="translated-text" class="form-control translated-content"></div>
+                                <div class="d-flex justify-content-end mt-3">
+                                    <button id="copy-translation-btn" class="btn btn-outline-secondary">
+                                        <i class="fas fa-copy me-1"></i>Copy
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Audio Translation Tab -->
+            <div class="tab-pane fade" id="audio-translation" role="tabpanel" aria-labelledby="audio-tab">
+                <div class="row g-4">
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header bg-primary-subtle">
+                                <h3 class="card-title h5 mb-0">English Audio</h3>
+                            </div>
+                            <div class="card-body">
+                                <form id="audio-upload-form">
+                                    <div class="mb-3">
+                                        <label for="audio-file" class="form-label">Upload Audio File (MP3, WAV, OGG)</label>
+                                        <input class="form-control" type="file" id="audio-file" accept="audio/*">
+                                    </div>
+                                    <div id="audio-preview-container" class="mb-3" style="display: none;">
+                                        <label class="form-label">Preview</label>
+                                        <audio id="audio-preview" controls class="w-100"></audio>
+                                    </div>
+                                    <div class="d-flex justify-content-end">
+                                        <button type="submit" class="btn btn-primary">
+                                            <i class="fas fa-language me-1"></i>Translate Audio
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header bg-primary-subtle">
+                                <h3 class="card-title h5 mb-0"><span id="audio-target-language-label">Hindi</span> Translation</h3>
+                            </div>
+                            <div class="card-body">
+                                <div id="audio-translation-placeholder">
+                                    <span class="text-muted">Upload an audio file to see the translation</span>
+                                </div>
+                                <div id="audio-processing" style="display: none;">
+                                    <div class="d-flex justify-content-center align-items-center flex-column my-5">
+                                        <div class="spinner-border text-primary mb-3" role="status">
+                                            <span class="visually-hidden">Loading...</span>
+                                        </div>
+                                        <p class="text-center">Processing audio file... This may take a moment.</p>
+                                    </div>
+                                </div>
+                                <div id="audio-results" style="display: none;">
+                                    <div class="mb-3">
+                                        <label class="form-label">Original English Text</label>
+                                        <div id="audio-original-text" class="form-control translated-content"></div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Translated Text</label>
+                                        <div id="audio-translated-text" class="form-control translated-content"></div>
+                                    </div>
+                                    <div id="translated-audio-container" class="mb-3" style="display: none;">
+                                        <label class="form-label">Translated Audio</label>
+                                        <audio id="translated-audio" controls class="w-100"></audio>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Video Translation Tab -->
+            <div class="tab-pane fade" id="video-translation" role="tabpanel" aria-labelledby="video-tab">
+                <div class="container mt-4">
+                    <h2 class="text-center mb-4">Video Translation</h2>
+                    
+                    <form id="video-translation-form" class="mb-4">
+                        <div class="form-group">
+                            <label for="video-file">Select Video File (MP4, AVI, MOV, WEBM)</label>
+                            <input type="file" class="form-control-file" id="video-file" accept="video/*" required>
+                        </div>
+                        
+                        <div class="text-center mt-3">
+                            <button type="submit" class="btn btn-primary">Translate Video</button>
+                        </div>
+                    </form>
+                    
+                    <div id="video-preview-container" style="display: none;">
+                        <h4>Original Video Preview</h4>
+                        <video id="video-preview" controls class="w-100 mb-3"></video>
+                    </div>
+                    
+                    <div id="video-processing-message" class="alert alert-info" style="display: none;">
+                        Processing video... This may take a few minutes.
+                    </div>
+                    
+                    <div id="translated-video-container" style="display: none;">
+                        <h4>Translated Video with Lip Sync</h4>
+                        <video id="translated-video" controls class="w-100 mb-3"></video>
+                        
+                        <div class="row mt-4">
+                            <div class="col-md-6">
+                                <h5>Original Text</h5>
+                                <div id="video-original-text" class="border p-3 bg-light"></div>
+                            </div>
+                            <div class="col-md-6">
+                                <h5>Translated Text</h5>
+                                <div id="video-translated-text" class="border p-3 bg-light"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="text-center mt-3">
+                            <button id="download-video-btn" class="btn btn-success">Download Translated Video</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast for notifications -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="toast-notification" class="toast align-items-center text-white bg-primary border-0" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="d-flex">
+            <div class="toast-body">
+                <!-- Toast message will be placed here -->
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+    </div>
+</div>
+{% endblock %}
