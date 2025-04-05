@@ -1,0 +1,75 @@
+/* Custom styles for AI Multimodal Translation System */
+
+/* General styles */
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+main {
+    flex: 1;
+}
+
+/* Translated content display area */
+.translated-content {
+    min-height: 150px;
+    height: auto;
+    max-height: 300px;
+    overflow-y: auto;
+    font-size: 1rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* SRT subtitle preview */
+.srt-preview {
+    max-height: 200px;
+    overflow-y: auto;
+    font-size: 0.9rem;
+    font-family: monospace;
+    white-space: pre-wrap;
+}
+
+/* Custom styling for audio and video players */
+audio, video {
+    border-radius: 0.25rem;
+    background-color: rgba(var(--bs-secondary-rgb), 0.1);
+}
+
+/* Improve form elements */
+textarea:focus, 
+select:focus, 
+.form-control:focus,
+.btn:focus {
+    box-shadow: 0 0 0 0.25rem rgba(var(--bs-primary-rgb), 0.25);
+}
+
+/* Audio and video preview containers */
+#audio-preview-container, 
+#video-preview-container {
+    padding: 1rem;
+    border-radius: 0.25rem;
+    background-color: rgba(var(--bs-secondary-rgb), 0.1);
+}
+
+/* Processing indicator styles */
+#audio-processing, 
+#video-processing {
+    min-height: 200px;
+}
+
+/* Tab content transition */
+.tab-pane.fade {
+    transition: opacity 0.15s linear;
+}
+
+/* Header logo styles */
+header img {
+    filter: brightness(1.2);
+}
+
+/* Footer styles */
+footer {
+    margin-top: auto;
+}
