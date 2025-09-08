@@ -2,12 +2,9 @@ import os
 import logging
 import tempfile
 import base64
-import json
-import time
-import wave
-import math
-from array import array
 from utils.fixed_translation import translate_text
+import speech_recognition as sr
+from gtts import gTTS
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -43,16 +40,11 @@ def speech_to_text(audio_path):
     """
     try:
         logger.info(f"Converting speech to text from {audio_path}")
-        
-        # In a real implementation, you would:
-        # 1. Load the audio file
-        # 2. Send it to a speech recognition service
-        # 3. Get back the transcribed text
-        
-        # For demo purposes, we'll return a placeholder text
-        # This should be replaced with actual speech recognition
-        return "This is a placeholder text for speech recognition. In a real implementation, this would be the actual transcribed text from the audio file."
-        
+        recognizer = sr.Recognizer()
+        with sr.AudioFile(audio_path) as source:
+            audio = recognizer.record(source)
+        text = recognizer.recognize_google(audio)
+        return text
     except Exception as e:
         logger.error(f"Error in speech to text conversion: {str(e)}")
         raise
@@ -68,17 +60,8 @@ def text_to_speech(text, target_lang):
         
         # Create a temporary file for the audio
         temp_audio_path = tempfile.mktemp(suffix='.mp3')
-        
-        # In a real implementation, you would:
-        # 1. Send the text to a text-to-speech service
-        # 2. Get back the audio data
-        # 3. Save it to the temporary file
-        
-        # For demo purposes, we'll create a dummy audio file
-        # This should be replaced with actual text-to-speech conversion
-        with open(temp_audio_path, 'wb') as f:
-            # Write some dummy audio data
-            f.write(b'dummy audio data')
+        tts = gTTS(text=text, lang=target_lang)
+        tts.save(temp_audio_path)
         
         return temp_audio_path
         
@@ -98,14 +81,9 @@ def process_audio(audio_path, target_lang):
     """
     try:
         logger.info(f"Processing audio file for translation to {target_lang}")
-        
-        # Step 1: Convert speech to English text
-        original_text = speech_to_text(audio_path)
-        
-        # Step 2: Translate the text to the target language
+        wav_path = convert_audio_to_wav(audio_path)
+        original_text = speech_to_text(wav_path)
         translated_text = translate_text(original_text, target_lang)
-        
-        # Step 3: Convert the translated text to speech audio in target language
         translated_audio_path = text_to_speech(translated_text, target_lang)
         
         # Read the audio file as bytes and encode to base64 for web display
