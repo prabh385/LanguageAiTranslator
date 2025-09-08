@@ -71,50 +71,50 @@ def translate_audio_route():
     try:
         if 'file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
-            
+
         file = request.files['file']
         target_lang = request.form.get('target_lang', 'hi')
-        
+
         if file.filename == '':
             return jsonify({'error': 'No file selected'}), 400
-            
+
         if not allowed_file(file.filename):
             return jsonify({'error': 'Invalid file type'}), 400
-            
+
         # Save the uploaded file
         filename = secure_filename(file.filename)
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(file_path)
-        
+
         # Convert to WAV if needed
         wav_path = convert_to_wav(file_path)
-        
+
         try:
             # Transcribe the audio
             transcript = transcribe_audio(wav_path)
-            
+
             # Translate the transcript
             translated_text = translate_text(transcript, target_lang)
-            
+
             # Convert translated text to speech
-            audio_content = text_to_speech(translated_text, target_lang)
-            
-            # Save the translated audio
+            audio_path = text_to_speech(translated_text, target_lang)
+
+            # Save the translated audio (copy file)
             output_path = os.path.join(app.config['UPLOAD_FOLDER'], f'translated_{filename}')
-            with open(output_path, 'wb') as f:
-                f.write(audio_content)
-                
+            with open(audio_path, 'rb') as src, open(output_path, 'wb') as dst:
+                dst.write(src.read())
+
             # Return both the audio file and text content
             return jsonify({
                 'original_text': transcript,
                 'translated_text': translated_text,
                 'audio_url': f'/download/{os.path.basename(output_path)}'
             })
-            
+
         finally:
             # Clean up temporary files
             cleanup_temp_files([file_path, wav_path])
-            
+
     except Exception as e:
         logger.error(f"Error in audio translation: {str(e)}")
         return jsonify({'error': str(e)}), 500

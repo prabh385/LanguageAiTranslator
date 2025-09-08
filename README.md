@@ -24,7 +24,8 @@ A Flask-based web application that provides multimodal translation capabilities 
 
 ## Prerequisites
 
-- Python 3.8 or higher
+- **Recommended Python version: 3.11**  
+  (Some dependencies may not work with Python 3.12 or newer)
 - FFmpeg (for video processing)
 - Internet connection (for speech recognition and translation services)
 
@@ -32,7 +33,7 @@ A Flask-based web application that provides multimodal translation capabilities 
 
 1. Clone the repository:
 ```bash
-git clone <repository-url>
+git clone <https://github.com/prabh385/LanguageAiTranslator.git>
 cd LanguageAiTranslator
 ```
 
@@ -155,4 +156,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - Google Speech Recognition for audio transcription
 - MediaPipe for face mesh and lip-sync
 - MoviePy for video processing
-- Flask for the web framework 
+- Flask for the web framework
