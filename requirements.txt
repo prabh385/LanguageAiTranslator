@@ -12,7 +12,6 @@ psycopg2-binary==2.9.10
 pydub==0.25.1
 SpeechRecognition==3.10.0
 gTTS==2.3.2
-mediapipe
 opencv-python==4.11.0.86
 setuptools>=65.5.1
 wheel
