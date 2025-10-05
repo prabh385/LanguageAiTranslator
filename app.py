@@ -218,6 +218,87 @@ def convert_mp3_to_wav(mp3_path, wav_path=None):
         logger.error(f"❌ MP3 to WAV conversion failed: {e}")
         raise  # Re-raise the exception to handle it in the calling function
 
+# Deployment-optimized helper functions
+def convert_mp3_to_wav_deployment(mp3_path, wav_path=None):
+    """MP3 conversion optimized for deployment environments"""
+    try:
+        if wav_path is None:
+            wav_path = mp3_path.replace('.mp3', '.wav')
+        
+        logger.info(f"🔄 Converting MP3 for deployment: {mp3_path}")
+        
+        # Method 1: Try moviepy first (often works in cloud environments)
+        try:
+            from moviepy.editor import AudioFileClip
+            audio = AudioFileClip(mp3_path)
+            audio.write_audiofile(wav_path, verbose=False, logger=None, fps=16000)
+            audio.close()
+            
+            if os.path.exists(wav_path) and os.path.getsize(wav_path) > 0:
+                logger.info(f"✅ Converted using moviepy: {wav_path}")
+                return wav_path
+        except Exception as e:
+            logger.warning(f"⚠️ Moviepy failed: {e}")
+        
+        # Method 2: Try pydub if available
+        try:
+            from pydub import AudioSegment
+            audio = AudioSegment.from_mp3(mp3_path)
+            audio.export(wav_path, format="wav")
+            logger.info(f"✅ Converted using pydub: {wav_path}")
+            return wav_path
+        except Exception as e:
+            logger.warning(f"⚠️ Pydub failed: {e}")
+        
+        # Method 3: Try direct file copy as fallback
+        logger.warning("⚠️ Using MP3 file directly (conversion not available)")
+        return mp3_path
+        
+    except Exception as e:
+        logger.error(f"❌ Deployment MP3 conversion failed: {e}")
+        return mp3_path  # Return original file as fallback
+
+def safe_transcribe_audio_deployment(audio_path):
+    """Safe transcription with deployment optimizations"""
+    try:
+        # Import here to avoid circular imports
+        from utils.audio_video_utils import transcribe_audio
+        
+        # Your existing transcription logic with timeout
+        transcript = transcribe_audio(audio_path)
+        
+        # Ensure we never return None
+        if transcript is None:
+            return "Transcription service temporarily unavailable"
+            
+        return str(transcript)
+        
+    except Exception as e:
+        logger.error(f"❌ Deployment transcription error: {str(e)}")
+        return f"Transcription service error: {str(e)}"
+
+def safe_transcribe_audio(audio_path):
+    """Safely transcribe audio with None handling"""
+    try:
+        from utils.audio_video_utils import transcribe_audio
+        
+        transcript = transcribe_audio(audio_path)
+        
+        # Ensure transcript is never None
+        if transcript is None:
+            logger.error("❌ Transcription returned None")
+            return "Transcription failed: No result returned"
+        
+        # Ensure transcript is a string
+        if not isinstance(transcript, str):
+            transcript = str(transcript)
+            
+        return transcript
+        
+    except Exception as e:
+        logger.error(f"❌ Safe transcription error: {str(e)}")
+        return f"Transcription error: {str(e)}"
+
 # Try to import other utilities with fallbacks
 try:
     from utils.audio_video_utils import (
@@ -316,7 +397,7 @@ def translate_text_endpoint():
 
 @app.route('/api/translate/audio', methods=['POST'])
 def translate_audio_endpoint():
-    """Audio translation endpoint - Enhanced with robust MP3 support"""
+    """Audio translation endpoint - Deployment optimized"""
     try:
         if 'file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
@@ -342,79 +423,115 @@ def translate_audio_endpoint():
         processed_audio_path = file_path
 
         try:
-            # Handle MP3 files specifically
+            # Handle MP3 files with deployment-friendly approach
             if filename.lower().endswith('.mp3'):
-                logger.info("🔄 Processing MP3 file...")
+                logger.info("🔄 Processing MP3 file for deployment...")
                 wav_path = file_path.replace('.mp3', '.wav')
                 
                 try:
-                    processed_audio_path = convert_mp3_to_wav(file_path, wav_path)
+                    # Try conversion but don't fail completely if it doesn't work
+                    processed_audio_path = convert_mp3_to_wav_deployment(file_path, wav_path)
                     if processed_audio_path != file_path:
                         temp_files.append(processed_audio_path)
-                    logger.info(f"✅ MP3 converted to: {processed_audio_path}")
+                    logger.info(f"✅ MP3 processed: {processed_audio_path}")
                 except Exception as e:
-                    logger.error(f"❌ MP3 conversion failed: {e}")
-                    return jsonify({
-                        'success': False,
-                        'error': f'MP3 processing failed: {str(e)}. Please install FFmpeg or convert to WAV format.',
-                        'original_text': '',
-                        'translated_text': ''
-                    }), 400
+                    logger.warning(f"⚠️ MP3 conversion failed, using original: {e}")
+                    processed_audio_path = file_path  # Fallback to original MP3
             else:
-                # For other audio formats, use existing conversion
+                # For other audio formats
                 processed_audio_path = convert_to_wav(file_path)
                 if processed_audio_path != file_path:
                     temp_files.append(processed_audio_path)
 
-            # Verify the audio file exists and is valid
+            # Verify the audio file
             if not os.path.exists(processed_audio_path) or os.path.getsize(processed_audio_path) == 0:
-                raise Exception("Processed audio file is empty or missing")
-
-            # Transcribe the audio
-            logger.info("🔊 Transcribing English audio...")
-            transcript = transcribe_audio(processed_audio_path)
-            logger.info(f"📄 English transcript: {transcript}")
-
-            # Check if transcription failed
-            if any(phrase in transcript.lower() for phrase in ['error', 'could not', 'no speech', 'unavailable', 'failed']):
                 return jsonify({
                     'success': False,
-                    'error': transcript,
+                    'error': 'Audio file is empty or corrupted',
                     'original_text': '',
                     'translated_text': ''
                 }), 400
 
-            # Translate the transcript
+            # Transcribe with timeout and better error handling
+            logger.info("🔊 Transcribing English audio...")
+            try:
+                transcript = safe_transcribe_audio_deployment(processed_audio_path)
+                logger.info(f"📄 Transcription completed, length: {len(transcript) if transcript else 0}")
+            except Exception as e:
+                logger.error(f"❌ Transcription error: {str(e)}")
+                return jsonify({
+                    'success': False,
+                    'error': f'Transcription service unavailable: {str(e)}',
+                    'original_text': '',
+                    'translated_text': ''
+                }), 500
+
+            # Safe check for transcription failure
+            if not transcript or any(phrase in (transcript.lower() if transcript else "") for phrase in ['error', 'could not', 'no speech', 'unavailable', 'failed', 'network']):
+                return jsonify({
+                    'success': False,
+                    'error': f'Transcription failed: {transcript}',
+                    'original_text': '',
+                    'translated_text': ''
+                }), 400
+
+            # Translate with fallback
             logger.info(f"🔄 Translating to {target_lang}...")
-            translated_text = translate_text(transcript, target_lang)
-            logger.info(f"🌐 Translated text: {translated_text}")
+            try:
+                translated_text = translate_text(transcript, target_lang)
+                logger.info(f"🌐 Translation completed")
+            except Exception as e:
+                logger.error(f"❌ Translation error: {str(e)}")
+                # Use fallback translation
+                translated_text = translate_text_fallback(transcript, target_lang)
 
-            # Convert translated text to speech
-            audio_output_path = os.path.join(app.config['UPLOAD_FOLDER'], f'translated_{target_lang}_{os.path.splitext(filename)[0]}.mp3')
+            # Text-to-speech with fallback
             logger.info(f"🗣️ Generating speech in {target_lang}...")
+            audio_output_path = os.path.join(app.config['UPLOAD_FOLDER'], f'translated_{target_lang}_{os.path.splitext(filename)[0]}.mp3')
             
-            tts_result = text_to_speech(translated_text, target_lang, audio_output_path)
-            
-            # Handle Punjabi warning
-            warning_message = None
-            if isinstance(tts_result, dict) and 'warning' in tts_result:
-                warning_message = tts_result['warning']
-                audio_path = tts_result['audio_path']
-            else:
-                audio_path = tts_result
-            
-            # Verify audio was created
-            if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
-                raise Exception("Failed to generate translated audio")
+            try:
+                tts_result = text_to_speech(translated_text, target_lang, audio_output_path)
+                
+                # Handle different return types
+                if isinstance(tts_result, dict) and 'audio_path' in tts_result:
+                    audio_path = tts_result['audio_path']
+                    warning_message = tts_result.get('warning')
+                else:
+                    audio_path = tts_result
+                    warning_message = None
+                
+                # Verify audio was created
+                if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
+                    logger.warning("⚠️ TTS failed, providing text-only response")
+                    return jsonify({
+                        'success': True,
+                        'original_text': transcript,
+                        'translated_text': translated_text,
+                        'audio_url': None,
+                        'target_language': target_lang,
+                        'warning': 'Audio generation failed, but translation completed successfully'
+                    })
+                
+                return jsonify({
+                    'success': True,
+                    'original_text': transcript,
+                    'translated_text': translated_text,
+                    'audio_url': f'/api/download/{os.path.basename(audio_path)}',
+                    'target_language': target_lang,
+                    'warning': warning_message
+                })
 
-            return jsonify({
-                'success': True,
-                'original_text': transcript,
-                'translated_text': translated_text,
-                'audio_url': f'/api/download/{os.path.basename(audio_path)}',
-                'target_language': target_lang,
-                'warning': warning_message  # Frontend can show this warning
-            })
+            except Exception as e:
+                logger.error(f"❌ TTS error: {str(e)}")
+                # Return success with text only
+                return jsonify({
+                    'success': True,
+                    'original_text': transcript,
+                    'translated_text': translated_text,
+                    'audio_url': None,
+                    'target_language': target_lang,
+                    'warning': 'Translation completed but audio generation failed'
+                })
 
         except Exception as e:
             logger.error(f"❌ Audio processing error: {str(e)}")
@@ -529,6 +646,47 @@ def test_translation():
         'translated_text': result,
         'success': True
     })
+
+@app.route('/api/health')
+def health_check():
+    """Health check endpoint for deployment"""
+    import subprocess
+    import requests
+    
+    health_status = {
+        'status': 'healthy',
+        'services': {}
+    }
+    
+    try:
+        # Check FFmpeg
+        result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True, timeout=5)
+        health_status['services']['ffmpeg'] = 'available' if result.returncode == 0 else 'unavailable'
+    except:
+        health_status['services']['ffmpeg'] = 'unavailable'
+    
+    try:
+        # Check network connectivity
+        response = requests.get('https://www.google.com', timeout=5)
+        health_status['services']['network'] = 'connected' if response.status_code == 200 else 'disconnected'
+    except:
+        health_status['services']['network'] = 'disconnected'
+    
+    # Check upload directory
+    health_status['services']['storage'] = 'ok' if os.path.exists(app.config['UPLOAD_FOLDER']) else 'failed'
+    
+    # Check function definitions
+    health_status['services']['functions'] = {
+        'convert_mp3_to_wav_deployment': 'convert_mp3_to_wav_deployment' in globals(),
+        'safe_transcribe_audio_deployment': 'safe_transcribe_audio_deployment' in globals(),
+        'safe_transcribe_audio': 'safe_transcribe_audio' in globals()
+    }
+    
+    # Overall status
+    if any(status == 'unavailable' for status in health_status['services'].values() if isinstance(status, str)):
+        health_status['status'] = 'degraded'
+    
+    return jsonify(health_status)
 
 if __name__ == '__main__':
     logger.info("🚀 Starting Translation Server...")
