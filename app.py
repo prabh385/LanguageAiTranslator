@@ -55,7 +55,7 @@ def translate_text_fallback(text, target_lang='hi'):
             "where are you from": "आप कहाँ से हैं"
         },
         'ta': {
-            "hello": "வணக்கம்",
+            "hello": "वணக்கம்",
             "thank you": "நன்றி",
             "how are you": "நீங்கள் எப்படி இருக்கிறீர்கள்"
         },
@@ -111,6 +111,113 @@ except Exception as e:
     print("⚠️  Using enhanced fallback translation")
     translate_text = translate_text_fallback
 
+# Enhanced MP3 to WAV conversion function
+def convert_mp3_to_wav(mp3_path, wav_path=None):
+    """Convert MP3 to WAV format with multiple fallback methods"""
+    try:
+        if wav_path is None:
+            wav_path = mp3_path.replace('.mp3', '.wav')
+        
+        # Check if we already have a valid WAV file
+        if os.path.exists(wav_path) and os.path.getsize(wav_path) > 0:
+            logger.info(f"✅ WAV file already exists: {wav_path}")
+            return wav_path
+            
+        logger.info(f"🔄 Converting MP3 to WAV: {mp3_path} -> {wav_path}")
+        
+        # Method 1: Try pydub with explicit ffmpeg path
+        try:
+            from pydub import AudioSegment
+            
+            # Try to find ffmpeg in common locations
+            ffmpeg_paths = [
+                'ffmpeg',
+                'C:\\ffmpeg\\bin\\ffmpeg.exe',
+                'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe',
+                '.\\ffmpeg\\bin\\ffmpeg.exe'
+            ]
+            
+            ffmpeg_found = None
+            for path in ffmpeg_paths:
+                try:
+                    import subprocess
+                    result = subprocess.run([path, '-version'], capture_output=True, timeout=5)
+                    if result.returncode == 0:
+                        ffmpeg_found = path
+                        logger.info(f"✅ Found FFmpeg at: {path}")
+                        break
+                except:
+                    continue
+            
+            if ffmpeg_found:
+                # Set ffmpeg path for pydub
+                AudioSegment.converter = ffmpeg_found
+                audio = AudioSegment.from_mp3(mp3_path)
+                audio.export(wav_path, format="wav")
+                logger.info(f"✅ Successfully converted MP3 to WAV using pydub: {wav_path}")
+                
+                # Verify the file was created
+                if os.path.exists(wav_path) and os.path.getsize(wav_path) > 0:
+                    return wav_path
+                else:
+                    logger.warning("⚠️ WAV file created but appears empty")
+                    raise Exception("Empty WAV file")
+            else:
+                logger.warning("⚠️ FFmpeg not found in common locations")
+                raise ImportError("FFmpeg not available")
+                
+        except Exception as e:
+            logger.warning(f"⚠️ pydub method failed: {e}")
+            
+        # Method 2: Try moviepy (often works without system FFmpeg)
+        try:
+            from moviepy.editor import AudioFileClip
+            audio = AudioFileClip(mp3_path)
+            audio.write_audiofile(wav_path, verbose=False, logger=None, fps=16000)
+            audio.close()
+            logger.info(f"✅ Successfully converted MP3 to WAV using moviepy: {wav_path}")
+            
+            if os.path.exists(wav_path) and os.path.getsize(wav_path) > 0:
+                return wav_path
+            else:
+                raise Exception("Empty WAV file from moviepy")
+                
+        except Exception as e:
+            logger.warning(f"⚠️ moviepy method failed: {e}")
+            
+        # Method 3: Use subprocess with ffmpeg directly
+        try:
+            import subprocess
+            
+            # Try to run ffmpeg command directly
+            cmd = [
+                'ffmpeg', '-i', mp3_path, '-acodec', 'pcm_s16le', 
+                '-ar', '16000', '-ac', '1', '-y', wav_path
+            ]
+            
+            # Remove 'ffmpeg' if we found a specific path earlier
+            if ffmpeg_found and ffmpeg_found != 'ffmpeg':
+                cmd[0] = ffmpeg_found
+                
+            result = subprocess.run(cmd, capture_output=True, timeout=30)
+            
+            if result.returncode == 0 and os.path.exists(wav_path):
+                logger.info(f"✅ Successfully converted MP3 to WAV using direct ffmpeg: {wav_path}")
+                return wav_path
+            else:
+                raise Exception(f"FFmpeg failed with return code {result.returncode}")
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Direct ffmpeg method failed: {e}")
+            
+        # Method 4: Ultimate fallback - use online service or return error
+        logger.error("❌ All MP3 conversion methods failed")
+        raise Exception("MP3 to WAV conversion failed. Please install FFmpeg or use WAV files.")
+                
+    except Exception as e:
+        logger.error(f"❌ MP3 to WAV conversion failed: {e}")
+        raise  # Re-raise the exception to handle it in the calling function
+
 # Try to import other utilities with fallbacks
 try:
     from utils.audio_video_utils import (
@@ -121,6 +228,7 @@ try:
         cleanup_temp_files
     )
     print("✅ SUCCESS: Loaded audio_video_utils")
+    
 except ImportError as e:
     print(f"❌ Failed to import audio_video_utils: {e}")
     # Create fallback functions
@@ -208,7 +316,7 @@ def translate_text_endpoint():
 
 @app.route('/api/translate/audio', methods=['POST'])
 def translate_audio_endpoint():
-    """Audio translation endpoint"""
+    """Audio translation endpoint - Enhanced with robust MP3 support"""
     try:
         if 'file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
@@ -231,21 +339,44 @@ def translate_audio_endpoint():
         logger.info(f"💾 File saved: {file_path}")
 
         temp_files = [file_path]
-        wav_path = None
+        processed_audio_path = file_path
 
         try:
-            # Convert to WAV if needed
-            wav_path = convert_to_wav(file_path)
-            if wav_path != file_path:
-                temp_files.append(wav_path)
+            # Handle MP3 files specifically
+            if filename.lower().endswith('.mp3'):
+                logger.info("🔄 Processing MP3 file...")
+                wav_path = file_path.replace('.mp3', '.wav')
+                
+                try:
+                    processed_audio_path = convert_mp3_to_wav(file_path, wav_path)
+                    if processed_audio_path != file_path:
+                        temp_files.append(processed_audio_path)
+                    logger.info(f"✅ MP3 converted to: {processed_audio_path}")
+                except Exception as e:
+                    logger.error(f"❌ MP3 conversion failed: {e}")
+                    return jsonify({
+                        'success': False,
+                        'error': f'MP3 processing failed: {str(e)}. Please install FFmpeg or convert to WAV format.',
+                        'original_text': '',
+                        'translated_text': ''
+                    }), 400
+            else:
+                # For other audio formats, use existing conversion
+                processed_audio_path = convert_to_wav(file_path)
+                if processed_audio_path != file_path:
+                    temp_files.append(processed_audio_path)
+
+            # Verify the audio file exists and is valid
+            if not os.path.exists(processed_audio_path) or os.path.getsize(processed_audio_path) == 0:
+                raise Exception("Processed audio file is empty or missing")
 
             # Transcribe the audio
             logger.info("🔊 Transcribing English audio...")
-            transcript = transcribe_audio(wav_path)
+            transcript = transcribe_audio(processed_audio_path)
             logger.info(f"📄 English transcript: {transcript}")
 
             # Check if transcription failed
-            if any(phrase in transcript.lower() for phrase in ['error', 'could not', 'no speech', 'unavailable']):
+            if any(phrase in transcript.lower() for phrase in ['error', 'could not', 'no speech', 'unavailable', 'failed']):
                 return jsonify({
                     'success': False,
                     'error': transcript,

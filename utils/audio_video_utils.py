@@ -4,6 +4,7 @@ import tempfile
 import speech_recognition as sr
 from gtts import gTTS
 import time
+from pydub import AudioSegment
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -65,118 +66,88 @@ def convert_to_wav(audio_path):
     try:
         logger.info(f"Converting audio to WAV: {audio_path}")
         
-        # If already WAV, return as is
-        if audio_path.lower().endswith('.wav'):
+        ext = os.path.splitext(audio_path)[1].lower()
+        if ext == ".wav":
             logger.info("File is already WAV format")
             return audio_path
-        
-        # Check if file exists and has content
-        if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
-            logger.error(f"Audio file is empty or doesn't exist: {audio_path}")
-            return audio_path
-            
-        # Create temporary WAV file
-        temp_wav = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
-        temp_wav_path = temp_wav.name
-        temp_wav.close()
-        
-        # Method 1: Try FFmpeg conversion
-        try:
-            import subprocess
-            result = subprocess.run([
-                'ffmpeg', '-i', audio_path, '-acodec', 'pcm_s16le', 
-                '-ac', '1', '-ar', '16000', temp_wav_path, '-y'
-            ], capture_output=True, text=True, timeout=30)
-            
-            if result.returncode == 0 and os.path.exists(temp_wav_path):
-                logger.info(f"✅ Audio converted to WAV with FFmpeg: {temp_wav_path}")
-                return temp_wav_path
-        except Exception as e:
-            logger.warning(f"FFmpeg conversion failed: {e}")
-        
-        # Method 2: Try pydub
-        try:
-            from pydub import AudioSegment
-            audio = AudioSegment.from_file(audio_path)
-            audio = audio.set_frame_rate(16000).set_channels(1)
-            audio.export(temp_wav_path, format="wav")
-            logger.info(f"✅ Audio converted to WAV with pydub: {temp_wav_path}")
-            return temp_wav_path
-        except Exception as e:
-            logger.warning(f"Pydub conversion failed: {e}")
-        
-        # Method 3: Direct copy for MP3 files (speech_recognition can handle MP3)
-        if audio_path.lower().endswith('.mp3'):
-            logger.info("Keeping original MP3 file (speech_recognition can handle it)")
-            return audio_path
-        
-        # Final fallback: return original file
-        logger.warning("All conversion methods failed, returning original file")
-        return audio_path
+        elif ext == ".mp3":
+            wav_path = audio_path.rsplit('.', 1)[0] + ".wav"
+            audio = AudioSegment.from_mp3(audio_path)
+            audio.export(wav_path, format="wav")
+            logger.info(f"✅ Audio converted to WAV: {wav_path}")
+            return wav_path
+        # Add support for other formats if needed
+        else:
+            raise ValueError("Unsupported audio format for conversion: " + ext)
         
     except Exception as e:
         logger.error(f"❌ Error converting audio to WAV: {str(e)}")
         return audio_path
 
+# In your transcribe_audio function in audio_video_utils.py, add MP3 support:
+# In your utils/audio_video_utils.py file, update the transcribe_audio function:
+
 def transcribe_audio(audio_path):
-    """
-    Transcribe audio file with robust error handling
-    """
+    """Transcribe audio file with proper error handling"""
     try:
         logger.info(f"Transcribing audio: {audio_path}")
         
-        # Verify file exists and has content
+        # Check if file exists and is valid
         if not os.path.exists(audio_path):
-            return "Audio file not found. Please try uploading again."
+            error_msg = f"Audio file not found: {audio_path}"
+            logger.error(error_msg)
+            return error_msg
         
         file_size = os.path.getsize(audio_path)
-        if file_size == 0:
-            return "Audio file is empty. Please try a different file."
-        
         logger.info(f"Audio file size: {file_size} bytes")
         
-        recognizer = sr.Recognizer()
+        if file_size == 0:
+            error_msg = f"Audio file is empty: {audio_path}"
+            logger.error(error_msg)
+            return error_msg
         
-        # Handle different file formats
+        # Get file extension
         file_ext = os.path.splitext(audio_path)[1].lower()
         logger.info(f"Processing file with extension: {file_ext}")
         
+        # Your existing transcription logic here
+        # Make sure it always returns a string, not None
+        
+        # Example with speech_recognition library:
         try:
+            import speech_recognition as sr
+            
+            r = sr.Recognizer()
             with sr.AudioFile(audio_path) as source:
-                logger.info("Adjusting for ambient noise...")
-                recognizer.adjust_for_ambient_noise(source, duration=1.0)
-                
-                logger.info("Recording audio...")
-                audio_data = recognizer.record(source)
-                
-                logger.info("Transcribing with Google Speech Recognition...")
-                text = recognizer.recognize_google(audio_data)
-                
-                if text and text.strip():
-                    logger.info(f"✅ Transcription successful: {text}")
-                    return text
-                else:
-                    logger.warning("Empty transcription received")
-                    return "No speech detected in the audio file."
-                    
-        except sr.UnknownValueError:
-            logger.warning("Google Speech Recognition could not understand audio")
-            return "Could not understand the audio. Please try again with clearer speech."
-        except sr.RequestError as e:
-            logger.error(f"Google Speech Recognition service error: {e}")
-            return "Speech recognition service unavailable. Please check your internet connection."
-        except Exception as e:
-            logger.warning(f"AudioFile processing failed: {e}")
-            # Try direct processing for MP3 files
-            if file_ext == '.mp3':
-                return transcribe_mp3_directly(audio_path)
+                audio = r.record(source)
+            
+            transcript = r.recognize_google(audio)
+            
+            if transcript and len(transcript.strip()) > 0:
+                logger.info(f"✅ Transcription successful: {transcript}")
+                return transcript
             else:
-                return f"Could not process audio file: {str(e)}"
+                error_msg = "No speech detected in audio"
+                logger.warning(error_msg)
+                return error_msg
                 
+        except sr.UnknownValueError:
+            error_msg = "Could not understand audio"
+            logger.warning(error_msg)
+            return error_msg
+        except sr.RequestError as e:
+            error_msg = f"Speech recognition error: {e}"
+            logger.error(error_msg)
+            return error_msg
+        except Exception as e:
+            error_msg = f"Transcription failed: {str(e)}"
+            logger.error(error_msg)
+            return error_msg
+            
     except Exception as e:
-        logger.error(f"❌ Error transcribing audio: {str(e)}")
-        return f"Error processing audio file: {str(e)}"
-
+        error_msg = f"Audio processing failed: {str(e)}"
+        logger.error(error_msg)
+        return error_msg
 def transcribe_mp3_directly(mp3_path):
     """
     Direct MP3 transcription when AudioFile fails
