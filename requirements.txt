@@ -19,3 +19,4 @@ mediapipe
 beautifulsoup4
 googletrans
 ffmpeg-python
+lipsync

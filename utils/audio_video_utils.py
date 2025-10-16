@@ -67,18 +67,18 @@ def convert_to_wav(audio_path):
         logger.info(f"Converting audio to WAV: {audio_path}")
         
         ext = os.path.splitext(audio_path)[1].lower()
+        wav_path = audio_path.rsplit('.', 1)[0] + ".wav"
+
         if ext == ".wav":
             logger.info("File is already WAV format")
             return audio_path
-        elif ext == ".mp3":
-            wav_path = audio_path.rsplit('.', 1)[0] + ".wav"
-            audio = AudioSegment.from_mp3(audio_path)
-            audio.export(wav_path, format="wav")
-            logger.info(f"✅ Audio converted to WAV: {wav_path}")
-            return wav_path
-        # Add support for other formats if needed
-        else:
-            raise ValueError("Unsupported audio format for conversion: " + ext)
+        
+        # Use pydub to handle various audio formats
+        audio = AudioSegment.from_file(audio_path)
+        audio.export(wav_path, format="wav")
+        
+        logger.info(f"✅ Audio converted to WAV: {wav_path}")
+        return wav_path
         
     except Exception as e:
         logger.error(f"❌ Error converting audio to WAV: {str(e)}")

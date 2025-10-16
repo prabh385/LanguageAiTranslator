@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
 app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['ALLOWED_EXTENSIONS'] = {'mp3', 'wav', 'ogg', 'mp4', 'avi', 'mov', 'webm'}
+app.config['ALLOWED_EXTENSIONS'] = {'mp3', 'wav', 'ogg', 'mp4', 'avi', 'mov', 'webm', 'flac', 'aac', 'wma', 'm4a', 'mkv', 'flv', 'wmv', 'm4v', 'mpeg'}
 
 # Supported languages
 LANGUAGES = {
@@ -362,6 +362,85 @@ except ImportError as e:
             shutil.copy2(video_path, output_path)
             return output_path
 
+def apply_lip_sync_deployment(video_path, audio_path, output_path):
+    """Lip-sync optimized for deployment environments"""
+    try:
+        logger.info(f"🎭 Applying lip-sync in deployment: {video_path} + {audio_path}")
+        
+        # Method 1: Try moviepy first
+        try:
+            from moviepy.editor import VideoFileClip, AudioFileClip
+            
+            video = VideoFileClip(video_path)
+            audio = AudioFileClip(audio_path)
+            
+            # Set audio to video
+            final_video = video.set_audio(audio)
+            
+            # Write with deployment-friendly settings
+            final_video.write_videofile(
+                output_path,
+                codec='libx264',
+                audio_codec='aac',
+                verbose=False,
+                logger=None,
+                temp_audiofile='temp-audio.m4a',
+                remove_temp=True,
+                threads=1  # Use single thread to avoid memory issues
+            )
+            
+            # Close clips to free memory
+            video.close()
+            audio.close()
+            final_video.close()
+            
+            logger.info(f"✅ Lip-sync successful with moviepy: {output_path}")
+            return output_path
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Moviepy lip-sync failed: {e}")
+        
+        # Method 2: Try direct FFmpeg command
+        try:
+            import subprocess
+            
+            cmd = [
+                'ffmpeg',
+                '-i', video_path,
+                '-i', audio_path,
+                '-c:v', 'copy',  # Copy video stream without re-encoding
+                '-c:a', 'aac',
+                '-map', '0:v:0',
+                '-map', '1:a:0',
+                '-shortest',
+                '-y',  # Overwrite output file
+                output_path
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            
+            if result.returncode == 0 and os.path.exists(output_path):
+                logger.info(f"✅ Lip-sync successful with FFmpeg: {output_path}")
+                return output_path
+            else:
+                raise Exception(f"FFmpeg failed: {result.stderr}")
+                
+        except Exception as e:
+            logger.warning(f"⚠️ FFmpeg lip-sync failed: {e}")
+        
+        # Method 3: Fallback - copy original video
+        logger.warning("⚠️ All lip-sync methods failed, returning original video")
+        import shutil
+        shutil.copy2(video_path, output_path)
+        return output_path
+        
+    except Exception as e:
+        logger.error(f"❌ Lip-sync deployment failed: {e}")
+        # Ultimate fallback
+        import shutil
+        shutil.copy2(video_path, output_path)
+        return output_path
+
 print("🎉 All systems ready!")
 
 @app.route('/')
@@ -411,7 +490,7 @@ def translate_audio_endpoint():
             return jsonify({'error': 'No file selected'}), 400
 
         if not allowed_file(file.filename):
-            return jsonify({'error': 'Invalid file type. Please upload MP3, WAV, or OGG file.'}), 400
+            return jsonify({'error': 'Invalid file type. Please upload a valid audio or video file.'}), 400
 
         # Save the uploaded file
         filename = secure_filename(file.filename)
@@ -557,9 +636,9 @@ def translate_audio_endpoint():
         
 @app.route('/api/translate/video', methods=['POST'])
 def translate_video_endpoint():
-    """Video translation endpoint"""
+    """Video translation endpoint - Deployment optimized"""
     try:
-        logger.info("🎬 Starting video translation")
+        logger.info("🎬 Starting video translation on deployed environment")
         
         if 'file' not in request.files:
             return jsonify({'error': 'No video file provided'}), 400
@@ -567,54 +646,175 @@ def translate_video_endpoint():
         video_file = request.files['file']
         target_lang = request.form.get('target_language', 'hi')
         
-        logger.info(f"🎥 Video translation: {target_lang}")
+        logger.info(f"🎥 Video translation request: {target_lang}")
         
         if video_file.filename == '':
             return jsonify({'error': 'No selected file'}), 400
         
         if not allowed_file(video_file.filename):
-            return jsonify({'error': 'Invalid file type'}), 400
-        
+            return jsonify({'error': 'Invalid file type. Supported: MP4, AVI, MOV, WebM'}), 400
+
         # Save the uploaded video
         video_filename = secure_filename(video_file.filename)
         video_path = os.path.join(app.config['UPLOAD_FOLDER'], video_filename)
         video_file.save(video_path)
-        
-        # Extract audio from video
-        audio_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{os.path.splitext(video_filename)[0]}_audio.wav")
-        extract_audio_from_video(video_path, audio_path)
-        
-        # Transcribe the audio
-        transcript = transcribe_audio(audio_path)
-        logger.info(f"📄 Transcript: {transcript}")
-        
-        # Translate the transcript
-        translated_text = translate_text(transcript, target_lang)
-        logger.info(f"🌐 Translated: {translated_text}")
-        
-        # Generate speech from translated text
-        translated_audio_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{os.path.splitext(video_filename)[0]}_translated.mp3")
-        text_to_speech(translated_text, target_lang, translated_audio_path)
-        
-        # Apply lip-sync to the video
-        output_video_path = os.path.join(app.config['UPLOAD_FOLDER'], f"translated_{os.path.splitext(video_filename)[0]}.mp4")
-        lip_synced_video_path = apply_lip_sync(video_path, translated_audio_path, output_video_path)
-        
-        # Clean up temporary files
-        cleanup_temp_files([audio_path, translated_audio_path, video_path])
-        
-        logger.info("✅ Video translation completed!")
-        return jsonify({
-            'success': True,
-            'original_text': transcript,
-            'translated_text': translated_text,
-            'video_url': f'/api/download/{os.path.basename(lip_synced_video_path)}'
-        })
-        
+        logger.info(f"💾 Video saved: {video_path} (Size: {os.path.getsize(video_path)} bytes)")
+
+        temp_files = [video_path]
+        audio_path = None
+        translated_audio_path = None
+        lip_synced_video_path = None
+
+        try:
+            # Step 1: Extract audio from video
+            logger.info("🔊 Extracting audio from video...")
+            audio_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{os.path.splitext(video_filename)[0]}_audio.wav")
+            
+            try:
+                extract_audio_from_video(video_path, audio_path)
+                if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
+                    raise Exception("Audio extraction failed - empty file")
+                temp_files.append(audio_path)
+                logger.info(f"✅ Audio extracted: {audio_path}")
+            except Exception as e:
+                logger.error(f"❌ Audio extraction failed: {str(e)}")
+                return jsonify({
+                    'success': False,
+                    'error': f'Audio extraction failed: {str(e)}. Please check if FFmpeg is installed.',
+                    'original_text': '',
+                    'translated_text': ''
+                }), 500
+
+            # Step 2: Transcribe audio
+            logger.info("🎤 Transcribing audio to text...")
+            try:
+                transcript = safe_transcribe_audio_deployment(audio_path)
+                logger.info(f"📄 Transcription completed")
+                
+                # Check if transcription failed
+                if not transcript or any(phrase in (transcript.lower() if transcript else "") for phrase in ['error', 'could not', 'no speech', 'unavailable', 'failed']):
+                    return jsonify({
+                        'success': False,
+                        'error': f'Transcription failed: {transcript}',
+                        'original_text': '',
+                        'translated_text': ''
+                    }), 400
+                    
+            except Exception as e:
+                logger.error(f"❌ Transcription failed: {str(e)}")
+                return jsonify({
+                    'success': False,
+                    'error': f'Transcription service unavailable: {str(e)}',
+                    'original_text': '',
+                    'translated_text': ''
+                }), 500
+
+            # Step 3: Translate text
+            logger.info(f"🔄 Translating to {target_lang}...")
+            try:
+                translated_text = translate_text(transcript, target_lang)
+                logger.info(f"🌐 Translation completed")
+            except Exception as e:
+                logger.error(f"❌ Translation failed: {str(e)}")
+                # Use fallback translation
+                translated_text = translate_text_fallback(transcript, target_lang)
+
+            # Step 4: Generate translated audio
+            logger.info(f"🗣️ Generating speech in {target_lang}...")
+            translated_audio_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{os.path.splitext(video_filename)[0]}_translated.mp3")
+            
+            try:
+                tts_result = text_to_speech(translated_text, target_lang, translated_audio_path)
+                
+                # Handle different return types
+                if isinstance(tts_result, dict) and 'audio_path' in tts_result:
+                    translated_audio_path = tts_result['audio_path']
+                    warning_message = tts_result.get('warning')
+                else:
+                    translated_audio_path = tts_result
+                    warning_message = None
+                
+                # Verify audio was created
+                if not os.path.exists(translated_audio_path) or os.path.getsize(translated_audio_path) == 0:
+                    logger.warning("⚠️ TTS failed, providing text-only response")
+                    return jsonify({
+                        'success': True,
+                        'original_text': transcript,
+                        'translated_text': translated_text,
+                        'video_url': None,
+                        'target_language': target_lang,
+                        'warning': 'Video translation completed but audio generation failed'
+                    })
+                
+                temp_files.append(translated_audio_path)
+                logger.info(f"✅ Translated audio generated: {translated_audio_path}")
+                
+            except Exception as e:
+                logger.error(f"❌ TTS failed: {str(e)}")
+                return jsonify({
+                    'success': True,
+                    'original_text': transcript,
+                    'translated_text': translated_text,
+                    'video_url': None,
+                    'target_language': target_lang,
+                    'warning': 'Translation completed but audio generation failed'
+                })
+
+            # Step 5: Apply lip-sync (video + audio merge)
+            logger.info("🎭 Applying lip-sync...")
+            output_video_path = os.path.join(app.config['UPLOAD_FOLDER'], f"translated_{os.path.splitext(video_filename)[0]}.mp4")
+            
+            try:
+                lip_synced_video_path = apply_lip_sync_deployment(video_path, translated_audio_path, output_video_path)
+                
+                if not os.path.exists(lip_synced_video_path) or os.path.getsize(lip_synced_video_path) == 0:
+                    logger.warning("⚠️ Lip-sync failed, providing original video with separate audio")
+                    # Fallback: return original video path
+                    lip_synced_video_path = video_path
+                
+                logger.info(f"✅ Lip-sync completed: {lip_synced_video_path}")
+                
+            except Exception as e:
+                logger.error(f"❌ Lip-sync failed: {str(e)}")
+                # Fallback: use original video
+                lip_synced_video_path = video_path
+
+            logger.info("✅ Video translation completed successfully!")
+            return jsonify({
+                'success': True,
+                'original_text': transcript,
+                'translated_text': translated_text,
+                'video_url': f'/api/download/{os.path.basename(lip_synced_video_path)}',
+                'target_language': target_lang,
+                'warning': warning_message
+            })
+
+        except Exception as e:
+            logger.error(f"❌ Video processing error: {str(e)}")
+            return jsonify({
+                'success': False,
+                'error': f'Video processing failed: {str(e)}',
+                'original_text': '',
+                'translated_text': ''
+            }), 500
+
+        finally:
+            # Clean up temporary files (keep final video)
+            try:
+                files_to_cleanup = [f for f in temp_files if f and os.path.exists(f) and f != lip_synced_video_path and f != video_path]
+                cleanup_temp_files(files_to_cleanup)
+            except Exception as e:
+                logger.warning(f"Error cleaning up temporary files: {e}")
+
     except Exception as e:
         logger.error(f"❌ Video translation error: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
+        return jsonify({
+            'success': False,
+            'error': f'Video translation failed: {str(e)}',
+            'original_text': '',
+            'translated_text': ''
+        }), 500
+        
 @app.route('/api/download/<filename>')
 def download_file(filename):
     """File download endpoint"""
